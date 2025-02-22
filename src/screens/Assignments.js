@@ -1,481 +1,421 @@
 import React, { useState, useEffect } from 'react';
-
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Button } from 'react-native';
-
-import { Icon, CheckBox } from 'react-native-elements';
-
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { Icon, Button, LinearProgress } from '@rneui/themed';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import DateTimePicker from '@react-native-community/datetimepicker';
 
+const priorityColors = {
+  high: '#dc3545',
+  medium: '#ffc107',
+  low: '#28a745'
+};
+
 const Assignments = () => {
-
   const [assignments, setAssignments] = useState([]);
-
   const [modalVisible, setModalVisible] = useState(false);
-
   const [showDatePicker, setShowDatePicker] = useState(false);
-
   const [currentAssignment, setCurrentAssignment] = useState({
-
     id: null,
-
     title: '',
-
     course: '',
-
     dueDate: new Date(),
-
     description: '',
-
+    priority: 'medium',
     completed: false
-
   });
 
   useEffect(() => {
-
+    const loadAssignments = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('@assignments');
+        if (saved) setAssignments(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load assignments', e);
+      }
+    };
     loadAssignments();
-
   }, []);
 
-  const loadAssignments = async () => {
-
-    try {
-
-      const savedAssignments = await AsyncStorage.getItem('@assignments');
-
-      if (savedAssignments) setAssignments(JSON.parse(savedAssignments));
-
-    } catch (e) {
-
-      console.error('Failed to load assignments', e);
-
-    }
-
-  };
-
   const saveAssignments = async (assignmentsToSave) => {
-
     try {
-
       await AsyncStorage.setItem('@assignments', JSON.stringify(assignmentsToSave));
-
     } catch (e) {
-
       console.error('Failed to save assignments', e);
-
     }
-
   };
 
-  const handleAddAssignment = () => {
-
-    setCurrentAssignment({
-
-      id: null,
-
-      title: '',
-
-      course: '',
-
-      dueDate: new Date(),
-
-      description: '',
-
-      completed: false
-
-    });
-
-    setModalVisible(true);
-
+  const calculateProgress = () => {
+    const completed = assignments.filter(a => a.completed).length;
+    return assignments.length > 0 ? completed / assignments.length : 0;
   };
 
-  const handleSaveAssignment = () => {
+  const handlePriorityChange = (level) => {
+    setCurrentAssignment({...currentAssignment, priority: level});
+  };
 
-    if (!currentAssignment.title || !currentAssignment.dueDate) return;
+  const toggleCompletion = (id) => {
+    const updated = assignments.map(a => 
+      a.id === id ? {...a, completed: !a.completed} : a
+    );
+    setAssignments(updated);
+    saveAssignments(updated);
+  };
 
+  const handleDelete = (id) => {
+    const updated = assignments.filter(a => a.id !== id);
+    setAssignments(updated);
+    saveAssignments(updated);
+  };
+
+  const handleSave = () => {
+    if (!currentAssignment.title) return;
+    
     const newAssignment = {
-
       ...currentAssignment,
-
       id: currentAssignment.id || Date.now().toString(),
-
       dueDate: currentAssignment.dueDate.toISOString()
-
     };
 
-    const updatedAssignments = currentAssignment.id
-
+    const updated = currentAssignment.id
       ? assignments.map(a => a.id === currentAssignment.id ? newAssignment : a)
-
       : [...assignments, newAssignment];
 
-    setAssignments(updatedAssignments);
-
-    saveAssignments(updatedAssignments);
-
+    setAssignments(updated);
+    saveAssignments(updated);
     setModalVisible(false);
-
-  };
-
-  const handleDateChange = (event, selectedDate) => {
-
-    setShowDatePicker(false);
-
-    if (selectedDate) {
-
-      setCurrentAssignment({...currentAssignment, dueDate: selectedDate});
-
-    }
-
-  };
-
-  const toggleCompletion = (assignmentId) => {
-
-    const updatedAssignments = assignments.map(a => 
-
-      a.id === assignmentId ? {...a, completed: !a.completed} : a
-
-    );
-
-    setAssignments(updatedAssignments);
-
-    saveAssignments(updatedAssignments);
-
-  };
-
-  const handleDeleteAssignment = (assignmentId) => {
-
-    const updatedAssignments = assignments.filter(a => a.id !== assignmentId);
-
-    setAssignments(updatedAssignments);
-
-    saveAssignments(updatedAssignments);
-
   };
 
   return (
-
     <View style={styles.container}>
-
-      <TouchableOpacity style={styles.addButton} onPress={handleAddAssignment}>
-
-        <Icon name="add" size={30} color="white" />
-
-      </TouchableOpacity>
+      <View style={styles.progressContainer}>
+        <Text style={styles.progressText}>
+          Completion Progress: {Math.round(calculateProgress() * 100)}%
+        </Text>
+        <LinearProgress
+          value={calculateProgress()}
+          color="#28a745"
+          style={styles.progressBar}
+          variant="determinate"
+        />
+      </View>
 
       <FlatList
-
-        data={assignments}
-
+        data={assignments.sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate))}
         keyExtractor={(item) => item.id}
-
+        contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
-
-          <View style={[styles.assignmentItem, item.completed && styles.completedItem]}>
-
-            <CheckBox
-
-              checked={item.completed}
-
-              onPress={() => toggleCompletion(item.id)}
-
-              containerStyle={styles.checkbox}
-
-            />
-
-            <View style={styles.assignmentInfo}>
-
-              <Text style={styles.assignmentTitle}>{item.title}</Text>
-
-              <Text style={styles.courseName}>{item.course}</Text>
-
-              <Text>Due: {new Date(item.dueDate).toLocaleDateString()}</Text>
-
-              {item.description && <Text>{item.description}</Text>}
-
+          <View style={[
+            styles.assignmentCard,
+            { borderLeftColor: priorityColors[item.priority], opacity: item.completed ? 0.6 : 1 }
+          ]}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.title}>{item.title}</Text>
+              <View style={styles.courseChip}>
+                <Text style={styles.chipText}>{item.course}</Text>
+              </View>
+            </View>
+            
+            <View style={styles.cardBody}>
+              <Text style={styles.dueDate}>
+                Due: {new Date(item.dueDate).toLocaleDateString()} • 
+                {new Date(item.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+              {item.description && <Text style={styles.description}>{item.description}</Text>}
             </View>
 
-            <View style={styles.actions}>
-
-              <TouchableOpacity onPress={() => {
-
-                setCurrentAssignment({...item, dueDate: new Date(item.dueDate)});
-
-                setModalVisible(true);
-
-              }}>
-
-                <Icon name="edit" type="material" color="#4CAF50" />
-
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={() => handleDeleteAssignment(item.id)}>
-
-                <Icon name="delete" type="material" color="#F44336" />
-
-              </TouchableOpacity>
-
+            <View style={styles.cardFooter}>
+              <Button
+                icon={<Icon name={item.completed ? 'check-circle' : 'radio-button-unchecked'} 
+                       color={item.completed ? '#28a745' : '#666'} />}
+                type="clear"
+                onPress={() => toggleCompletion(item.id)}
+              />
+              <View style={styles.footerActions}>
+                <Button
+                  icon={<Icon name="edit" color="#666" />}
+                  type="clear"
+                  onPress={() => {
+                    setCurrentAssignment({...item, dueDate: new Date(item.dueDate)});
+                    setModalVisible(true);
+                  }}
+                />
+                <Button
+                  icon={<Icon name="delete" color="#dc3545" />}
+                  type="clear"
+                  onPress={() => handleDelete(item.id)}
+                />
+              </View>
             </View>
-
           </View>
-
         )}
-
       />
 
-      <Modal visible={modalVisible} animationType="slide">
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => {
+          setCurrentAssignment({
+            id: null,
+            title: '',
+            course: '',
+            dueDate: new Date(),
+            description: '',
+            priority: 'medium',
+            completed: false
+          });
+          setModalVisible(true);
+        }}
+      >
+        <Icon name="add" size={30} color="white" />
+      </TouchableOpacity>
 
-        <View style={styles.modalContent}>
-
-          <Text style={styles.modalTitle}>
-
-            {currentAssignment.id ? 'Edit Assignment' : 'Add Assignment'}
-
-          </Text>
-
-          <TextInput
-
-            style={styles.input}
-
-            placeholder="Assignment Title *"
-
-            value={currentAssignment.title}
-
-            onChangeText={(text) => setCurrentAssignment({...currentAssignment, title: text})}
-
-          />
-
-          <TextInput
-
-            style={styles.input}
-
-            placeholder="Course Name"
-
-            value={currentAssignment.course}
-
-            onChangeText={(text) => setCurrentAssignment({...currentAssignment, course: text})}
-
-          />
-
-          <TouchableOpacity 
-
-            style={styles.input} 
-
-            onPress={() => setShowDatePicker(true)}
-
-          >
-
-            <Text>
-
-              Due Date: {currentAssignment.dueDate.toLocaleDateString()}
-
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalContainer}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {currentAssignment.id ? 'Edit Assignment' : 'New Assignment'}
             </Text>
 
-          </TouchableOpacity>
-
-          {showDatePicker && (
-
-            <DateTimePicker
-
-              value={currentAssignment.dueDate}
-
-              mode="datetime"
-
-              display="default"
-
-              onChange={handleDateChange}
-
+            <TextInput
+              style={styles.input}
+              placeholder="Assignment Title"
+              placeholderTextColor="#888"
+              value={currentAssignment.title}
+              onChangeText={text => setCurrentAssignment({...currentAssignment, title: text})}
             />
 
-          )}
+            <TextInput
+              style={styles.input}
+              placeholder="Course Name"
+              placeholderTextColor="#888"
+              value={currentAssignment.course}
+              onChangeText={text => setCurrentAssignment({...currentAssignment, course: text})}
+            />
 
-          <TextInput
+            <View style={styles.priorityContainer}>
+              {Object.keys(priorityColors).map(level => (
+                <TouchableOpacity
+                  key={level}
+                  style={[
+                    styles.priorityButton,
+                    currentAssignment.priority === level && 
+                      { backgroundColor: priorityColors[level] }
+                  ]}
+                  onPress={() => handlePriorityChange(level)}
+                >
+                  <Text 
+                    style={[
+                      styles.priorityText,
+                      currentAssignment.priority === level && { color: 'white' }
+                    ]}
+                  >
+                    {level.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-            style={[styles.input, { height: 80 }]}
+            <TouchableOpacity 
+              style={styles.dateInput} 
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={styles.dateText}>
+                {currentAssignment.dueDate.toLocaleDateString()} • 
+                {currentAssignment.dueDate.toLocaleTimeString()}
+              </Text>
+            </TouchableOpacity>
 
-            placeholder="Description"
+            {showDatePicker && (
+              <DateTimePicker
+                value={currentAssignment.dueDate}
+                mode="datetime"
+                display="default"
+                onChange={(e, date) => {
+                  setShowDatePicker(false);
+                  if (date) setCurrentAssignment({...currentAssignment, dueDate: date});
+                }}
+              />
+            )}
 
-            multiline
+            <TextInput
+              style={[styles.input, { height: 80 }]}
+              placeholder="Description"
+              placeholderTextColor="#888"
+              multiline
+              value={currentAssignment.description}
+              onChangeText={text => setCurrentAssignment({...currentAssignment, description: text})}
+            />
 
-            value={currentAssignment.description}
-
-            onChangeText={(text) => setCurrentAssignment({...currentAssignment, description: text})}
-
-          />
-
-          <View style={styles.modalButtons}>
-
-            <Button title="Cancel" onPress={() => setModalVisible(false)} color="#999" />
-
-            <Button title="Save" onPress={handleSaveAssignment} color="#2196F3" />
-
+            <View style={styles.buttonRow}>
+              <Button
+                title="Cancel"
+                type="outline"
+                buttonStyle={styles.cancelButton}
+                titleStyle={styles.cancelText}
+                onPress={() => setModalVisible(false)}
+              />
+              <Button
+                title="Save Assignment"
+                buttonStyle={styles.saveButton}
+                onPress={handleSave}
+              />
+            </View>
           </View>
-
-        </View>
-
+        </KeyboardAvoidingView>
       </Modal>
-
     </View>
-
   );
-
 };
 
 const styles = StyleSheet.create({
-
   container: {
-
     flex: 1,
-
-    padding: 15,
-
+    backgroundColor: '#000000',
+    paddingTop: 20,
   },
-
-  addButton: {
-
-    position: 'absolute',
-
-    right: 20,
-
-    bottom: 20,
-
-    backgroundColor: '#2196F3',
-
-    borderRadius: 30,
-
-    width: 60,
-
-    height: 60,
-
-    justifyContent: 'center',
-
-    alignItems: 'center',
-
-    zIndex: 1,
-
-  },
-
-  assignmentItem: {
-
-    flexDirection: 'row',
-
-    alignItems: 'center',
-
+  progressContainer: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
     padding: 15,
-
-    marginVertical: 5,
-
-    backgroundColor: '#f8f8f8',
-
+    margin: 10,
+  },
+  progressText: {
+    color: '#888',
+    fontSize: 14,
+  },
+  progressBar: {
+    height: 10,
     borderRadius: 5,
-
   },
-
-  completedItem: {
-
-    backgroundColor: '#e8f5e9',
-
-    opacity: 0.7,
-
+  assignmentCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    margin: 10,
+    padding: 15,
+    borderLeftWidth: 6,
   },
-
-  checkbox: {
-
-    padding: 0,
-
-    margin: 0,
-
-    marginRight: 10,
-
-    backgroundColor: 'transparent',
-
-    borderWidth: 0,
-
-  },
-
-  assignmentInfo: {
-
-    flex: 1,
-
-  },
-
-  assignmentTitle: {
-
-    fontSize: 16,
-
-    fontWeight: 'bold',
-
-  },
-
-  courseName: {
-
-    color: '#666',
-
-    marginVertical: 3,
-
-  },
-
-  actions: {
-
+  cardHeader: {
     flexDirection: 'row',
-
-    gap: 15,
-
-    marginLeft: 10,
-
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
-
-  modalContent: {
-
+  title: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#fff',
     flex: 1,
-
-    padding: 20,
-
-    justifyContent: 'center',
-
   },
-
-  modalTitle: {
-
-    fontSize: 20,
-
-    fontWeight: 'bold',
-
-    marginBottom: 20,
-
-    textAlign: 'center',
-
+  courseChip: {
+    backgroundColor: '#333333',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-
-  input: {
-
-    height: 40,
-
-    borderColor: '#ddd',
-
+  chipText: {
+    color: '#fff',
+    fontSize: 12,
+  },
+  dueDate: {
+    color: '#888',
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  description: {
+    color: '#ccc',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  footerActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  priorityContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    marginVertical: 12,
+  },
+  priorityButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 20,
     borderWidth: 1,
-
-    marginBottom: 15,
-
-    padding: 10,
-
-    borderRadius: 5,
-
+    borderColor: '#444',
+  },
+  priorityText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#fff',
+  },
+  dateInput: {
+    backgroundColor: '#333333',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8,
+  },
+  dateText: {
+    color: '#fff',
+  },
+  addButton: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    backgroundColor: '#28a745',
+    borderRadius: 30,
+    width: 60,
+    height: 60,
     justifyContent: 'center',
-
+    alignItems: 'center',
+    zIndex: 1,
   },
-
-  modalButtons: {
-
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    margin: 20,
+    borderRadius: 12,
+    padding: 20,
+  },
+  input: {
+    backgroundColor: '#333333',
+    color: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8,
+    fontSize: 16,
+  },
+  buttonRow: {
     flexDirection: 'row',
-
-    justifyContent: 'space-around',
-
+    justifyContent: 'space-between',
     marginTop: 20,
-
   },
-
+  saveButton: {
+    backgroundColor: '#28a745',
+    borderRadius: 8,
+    paddingVertical: 10,
+    flex: 1,
+    marginLeft: 10,
+  },
+  cancelButton: {
+    borderColor: '#28a745',
+    borderRadius: 8,
+    flex: 1,
+    marginRight: 10,
+  },
+  cancelText: {
+    color: '#888',
+  },
 });
 
 export default Assignments;

@@ -1,401 +1,356 @@
 import React, { useState, useEffect } from 'react';
-
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Button } from 'react-native';
-
-import { Icon } from 'react-native-elements';
-
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { Icon, Button } from '@rneui/themed';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const CourseSchedule = () => {
-
   const [courses, setCourses] = useState([]);
-
   const [modalVisible, setModalVisible] = useState(false);
-
   const [currentCourse, setCurrentCourse] = useState({
-
     id: null,
-
     name: '',
-
-    time: '',
-
-    days: '',
-
-    location: ''
-
+    time: new Date(),
+    days: [],
+    location: '',
+    credits: ''
   });
-
-  // Load saved courses on mount
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   useEffect(() => {
-
+    const loadCourses = async () => {
+      try {
+        const savedCourses = await AsyncStorage.getItem('@courses');
+        if (savedCourses) setCourses(JSON.parse(savedCourses));
+      } catch (e) {
+        console.error('Failed to load courses', e);
+      }
+    };
     loadCourses();
-
   }, []);
 
-  const loadCourses = async () => {
-
-    try {
-
-      const savedCourses = await AsyncStorage.getItem('@courses');
-
-      if (savedCourses) setCourses(JSON.parse(savedCourses));
-
-    } catch (e) {
-
-      console.error('Failed to load courses', e);
-
-    }
-
-  };
-
   const saveCourses = async (coursesToSave) => {
-
     try {
-
       await AsyncStorage.setItem('@courses', JSON.stringify(coursesToSave));
-
     } catch (e) {
-
       console.error('Failed to save courses', e);
-
     }
-
   };
 
-  const handleAddCourse = () => {
-
-    setCurrentCourse({
-
-      id: null,
-
-      name: '',
-
-      time: '',
-
-      days: '',
-
-      location: ''
-
-    });
-
-    setModalVisible(true);
-
+  const handleDayPress = (day) => {
+    const updatedDays = currentCourse.days.includes(day)
+      ? currentCourse.days.filter(d => d !== day)
+      : [...currentCourse.days, day];
+    setCurrentCourse({...currentCourse, days: updatedDays});
   };
 
   const handleSaveCourse = () => {
+    const courseData = {
+      ...currentCourse,
+      id: currentCourse.id || Date.now().toString(),
+      time: currentCourse.time.toISOString()
+    };
 
-    if (currentCourse.id !== null) {
-
-      // Update existing course
-
-      const updatedCourses = courses.map(course => 
-
-        course.id === currentCourse.id ? currentCourse : course
-
-      );
-
-      setCourses(updatedCourses);
-
-      saveCourses(updatedCourses);
-
-    } else {
-
-      // Add new course
-
-      const newCourse = { ...currentCourse, id: Date.now().toString() };
-
-      const updatedCourses = [...courses, newCourse];
-
-      setCourses(updatedCourses);
-
-      saveCourses(updatedCourses);
-
-    }
-
-    setModalVisible(false);
-
-  };
-
-  const handleEditCourse = (course) => {
-
-    setCurrentCourse(course);
-
-    setModalVisible(true);
-
-  };
-
-  const handleDeleteCourse = (courseId) => {
-
-    const updatedCourses = courses.filter(course => course.id !== courseId);
+    const updatedCourses = currentCourse.id 
+      ? courses.map(c => c.id === currentCourse.id ? courseData : c)
+      : [...courses, courseData];
 
     setCourses(updatedCourses);
-
     saveCourses(updatedCourses);
-
+    setModalVisible(false);
   };
 
   return (
-
     <View style={styles.container}>
-
-      <TouchableOpacity style={styles.addButton} onPress={handleAddCourse}>
-
-        <Icon name="add" size={30} color="white" />
-
-      </TouchableOpacity>
-
       <FlatList
-
         data={courses}
-
         keyExtractor={(item) => item.id}
-
+        contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
-
-          <View style={styles.courseItem}>
-
-            <View style={styles.courseInfo}>
-
-              <Text style={styles.courseName}>{item.name}</Text>
-
-              <Text>{item.days} {item.time}</Text>
-
-              <Text>{item.location}</Text>
-
+          <View style={styles.courseCard}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.courseTitle}>{item.name}</Text>
+              <Text style={styles.credits}>{item.credits} Credits</Text>
             </View>
-
-            <View style={styles.actions}>
-
-              <TouchableOpacity onPress={() => handleEditCourse(item)}>
-
-                <Icon name="edit" type="material" color="#4CAF50" />
-
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={() => handleDeleteCourse(item.id)}>
-
-                <Icon name="delete" type="material" color="#F44336" />
-
-              </TouchableOpacity>
-
+            <View style={styles.cardBody}>
+              <View style={styles.daysContainer}>
+                {daysOfWeek.map(day => (
+                  <Text 
+                    key={day}
+                    style={[
+                      styles.dayPill,
+                      item.days.includes(day) && styles.selectedDay
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                ))}
+              </View>
+              <Text style={styles.timeText}>
+                {new Date(item.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+              <Text style={styles.locationText}>{item.location}</Text>
             </View>
-
+            <View style={styles.cardFooter}>
+              <Button
+                icon={<Icon name="edit" size={20} color="#fff" />}
+                buttonStyle={styles.footerButton}
+                onPress={() => {
+                  setCurrentCourse({...item, time: new Date(item.time)});
+                  setModalVisible(true);
+                }}
+              />
+              <Button
+                icon={<Icon name="delete" size={20} color="#fff" />}
+                buttonStyle={[styles.footerButton, { backgroundColor: '#dc3545' }]}
+                onPress={() => {
+                  const updated = courses.filter(c => c.id !== item.id);
+                  setCourses(updated);
+                  saveCourses(updated);
+                }}
+              />
+            </View>
           </View>
-
         )}
-
       />
 
-      <Modal visible={modalVisible} animationType="slide">
+      <TouchableOpacity 
+        style={styles.addButton} 
+        onPress={() => {
+          setCurrentCourse({
+            id: null,
+            name: '',
+            time: new Date(),
+            days: [],
+            location: '',
+            credits: ''
+          });
+          setModalVisible(true);
+        }}
+      >
+        <Icon name="add" size={30} color="white" />
+      </TouchableOpacity>
 
-        <View style={styles.modalContent}>
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalContainer}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {currentCourse.id ? 'Edit Course' : 'Add Course'}
+            </Text>
 
-          <Text style={styles.modalTitle}>
+            <TextInput
+              style={styles.input}
+              placeholder="Course Name"
+              placeholderTextColor="#888"
+              value={currentCourse.name}
+              onChangeText={text => setCurrentCourse({...currentCourse, name: text})}
+            />
 
-            {currentCourse.id ? 'Edit Course' : 'Add Course'}
+            <TextInput
+              style={styles.input}
+              placeholder="Credits"
+              placeholderTextColor="#888"
+              keyboardType="numeric"
+              value={currentCourse.credits}
+              onChangeText={text => setCurrentCourse({...currentCourse, credits: text})}
+            />
 
-          </Text>
+            <TouchableOpacity 
+              style={styles.timeInput}
+              onPress={() => setShowTimePicker(true)}
+            >
+              <Text style={styles.timeText}>
+                {currentCourse.time.toLocaleTimeString()}
+              </Text>
+            </TouchableOpacity>
 
-          
+            {showTimePicker && (
+              <DateTimePicker
+                value={currentCourse.time}
+                mode="time"
+                display="default"
+                onChange={(e, date) => {
+                  setShowTimePicker(false);
+                  if (date) setCurrentCourse({...currentCourse, time: date});
+                }}
+              />
+            )}
 
-          <TextInput
+            <View style={styles.daysContainer}>
+              {daysOfWeek.map(day => (
+                <TouchableOpacity
+                  key={day}
+                  style={[
+                    styles.dayButton,
+                    currentCourse.days.includes(day) && styles.selectedDay
+                  ]}
+                  onPress={() => handleDayPress(day)}
+                >
+                  <Text style={styles.dayText}>{day}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-            style={styles.input}
+            <TextInput
+              style={styles.input}
+              placeholder="Location"
+              placeholderTextColor="#888"
+              value={currentCourse.location}
+              onChangeText={text => setCurrentCourse({...currentCourse, location: text})}
+            />
 
-            placeholder="Course Name"
-
-            value={currentCourse.name}
-
-            onChangeText={(text) => setCurrentCourse({...currentCourse, name: text})}
-
-          />
-
-          
-
-          <TextInput
-
-            style={styles.input}
-
-            placeholder="Time (e.g., 9:00 AM - 10:30 AM)"
-
-            value={currentCourse.time}
-
-            onChangeText={(text) => setCurrentCourse({...currentCourse, time: text})}
-
-          />
-
-          
-
-          <TextInput
-
-            style={styles.input}
-
-            placeholder="Days (e.g., Mon, Wed, Fri)"
-
-            value={currentCourse.days}
-
-            onChangeText={(text) => setCurrentCourse({...currentCourse, days: text})}
-
-          />
-
-          
-
-          <TextInput
-
-            style={styles.input}
-
-            placeholder="Location"
-
-            value={currentCourse.location}
-
-            onChangeText={(text) => setCurrentCourse({...currentCourse, location: text})}
-
-          />
-
-          <View style={styles.modalButtons}>
-
-            <Button title="Cancel" onPress={() => setModalVisible(false)} color="#999" />
-
-            <Button title="Save" onPress={handleSaveCourse} color="#2196F3" />
-
+            <View style={styles.buttonRow}>
+              <Button
+                title="Cancel"
+                type="outline"
+                buttonStyle={styles.cancelButton}
+                titleStyle={styles.cancelText}
+                onPress={() => setModalVisible(false)}
+              />
+              <Button
+                title="Save Course"
+                buttonStyle={styles.saveButton}
+                onPress={handleSaveCourse}
+              />
+            </View>
           </View>
-
-        </View>
-
+        </KeyboardAvoidingView>
       </Modal>
-
     </View>
-
   );
-
 };
 
 const styles = StyleSheet.create({
-
   container: {
-
     flex: 1,
-
-    padding: 20,
-
+    backgroundColor: '#000000',
+    paddingTop: 20,
   },
-
-  addButton: {
-
-    position: 'absolute',
-
-    right: 20,
-
-    bottom: 20,
-
-    backgroundColor: '#2196F3',
-
-    borderRadius: 30,
-
-    width: 60,
-
-    height: 60,
-
-    justifyContent: 'center',
-
-    alignItems: 'center',
-
-    zIndex: 1,
-
-  },
-
-  courseItem: {
-
-    flexDirection: 'row',
-
-    justifyContent: 'space-between',
-
+  courseCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    margin: 10,
     padding: 15,
-
-    marginVertical: 5,
-
-    backgroundColor: '#f8f8f8',
-
-    borderRadius: 5,
-
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
-
-  courseInfo: {
-
-    flex: 1,
-
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
-
-  courseName: {
-
+  courseTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  credits: {
+    color: '#888',
+    fontSize: 14,
+  },
+  daysContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginVertical: 8,
+  },
+  dayPill: {
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: '#3a3a3a',
+    color: '#fff',
+    fontSize: 12,
+    margin: 2,
+  },
+  selectedDay: {
+    backgroundColor: '#28a745',
+    color: 'white',
+  },
+  timeText: {
+    color: '#28a745',
     fontSize: 16,
-
-    fontWeight: 'bold',
-
-    marginBottom: 5,
-
+    marginVertical: 4,
   },
-
-  actions: {
-
-    flexDirection: 'row',
-
-    gap: 15,
-
-    alignItems: 'center',
-
+  locationText: {
+    color: '#888',
+    fontSize: 14,
   },
-
-  modalContent: {
-
-    flex: 1,
-
-    padding: 20,
-
+  addButton: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    backgroundColor: '#28a745',
+    borderRadius: 30,
+    width: 60,
+    height: 60,
     justifyContent: 'center',
-
+    alignItems: 'center',
+    zIndex: 1,
   },
-
-  modalTitle: {
-
-    fontSize: 20,
-
-    fontWeight: 'bold',
-
-    marginBottom: 20,
-
-    textAlign: 'center',
-
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.8)',
   },
-
+  modalContent: {
+    backgroundColor: '#2d2d2d',
+    margin: 20,
+    borderRadius: 12,
+    padding: 20,
+  },
   input: {
-
-    height: 40,
-
-    borderColor: '#ddd',
-
-    borderWidth: 1,
-
-    marginBottom: 15,
-
-    padding: 10,
-
-    borderRadius: 5,
-
+    backgroundColor: '#3a3a3a',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8,
+    fontSize: 16,
+    color: '#fff',
   },
-
-  modalButtons: {
-
+  buttonRow: {
     flexDirection: 'row',
-
-    justifyContent: 'space-around',
-
+    justifyContent: 'space-between',
     marginTop: 20,
-
   },
-
+  saveButton: {
+    backgroundColor: '#28a745',
+    borderRadius: 8,
+    paddingVertical: 10,
+    flex: 1,
+    marginLeft: 10,
+  },
+  cancelButton: {
+    borderColor: '#28a745',
+    borderRadius: 8,
+    flex: 1,
+    marginRight: 10,
+  },
+  cancelText: {
+    color: '#888',
+  },
+  dayButton: {
+    padding: 10,
+    borderRadius: 20,
+    backgroundColor: '#3a3a3a',
+  },
+  dayText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  footerButton: {
+    backgroundColor: '#333333',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginHorizontal: 4,
+  },
 });
 
 export default CourseSchedule;
